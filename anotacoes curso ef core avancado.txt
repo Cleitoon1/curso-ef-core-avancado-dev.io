@@ -1,0 +1,227 @@
+Anotações curso EF Core (tudo escrito de forma livre, anotando de acordo com o andamento das aulas)
+
+Modulo 3: EF Database
+Ensure Deleted/Created:
+	- Deleted - exclui o banco de dados caso ele exista.
+	- Created - verifica se o banco existe, caso não existe e executa todos os comandos para criar as tabelas, indices e etc.
+HealthCheck:
+	- Verificar se a conexão com o banco está OK: utilizar Context.Database.CanConnect() forma nativa do EF Core substituindo aqueles trycatch fazendo connection.Open ou alguma query simples e alguma entidade.
+Gerenciando Estado da conexão:
+	- Refletir sobre ao realizar muitas consultas abrir uma conexão apenas, melhora muito a perfomance, porque sem controlar o EF irá abrir e fechar uma conexão em todas a consultas controlando ele irá utilizar a mesma o que fara a perfomance melhorar muito, teste realizado com 200 interação controlando apenas 1 alteração na conexão, sem controlar 400
+Execute SQL
+	- 2 novos comandos apresentados db.Database.ExecuteRawSQL (ja tinha utilizado uma vez) que realiza a formatação da string e converte os parametros para dbparameters e o  db.Database.ExecuteSqlInterpolated que faz o mesmo que o anterior mas faz com uma string interpolada (ele ja entende e converte para os parametros)
+Se Protegente de SQL Injection
+	- NUNCA UTILIZAR os valores fornecidos pelo usuários como concatenção de string, sempre passando como parametro do banco utilizando SQLRaw
+Detectando Migrações Pendentes
+	- db.Database.GetPendingMigrations() muito interessante conseguir ver essa informação de forma facil, extramamente util.
+Aplicando Migração em tempo de execução
+	- não é uma boa prática, maaaaaaaas vai q, db.Database.Migrate();
+Recuperando migrações
+	- db.Database.GetPendingMigrations(), muito legal para saber todas as migrações da aplicação, nunca tinha utilizado
+Recuperando migrações aplicadas
+	- muito legal saber, nunca tinha utilizado de nenhuma forma, existe via CLI "dotnet ef migrations list --context ApplicationContext" e  db.Database.GetAppliedMigrations()
+Gerando Script do banco de dados
+	- ja tinha feito de outro jeito, mas nunca pelo em tempo real, muito interessante db.Database.GenerateCreateScript()
+	
+Modulo 4: Tipos de carregamento - DeepDive
+	Tipos de Carregamento: 
+		Adiantado (Eager): carrega tudo junto na mesma consulta, bom para situação de tabelas com poucos campos
+		Explícito (Explicity): carregamento mais direto, onde é realizada a consulta dos dados para o objeto diferente do Adiantado que eu do o include o objeto vem sem os dados e eu realizo o comando para carregas as informações relacionadas, legal pois consigo fazer um where para trazer somente o que eu preciso
+		Lento (LazyLoad): os dados são carregados sob demanda, somente quando a propriedade de navegação é acessada, usar com cuidado pois todo acesso a propriedade é uma query no banco, imagine isso para 10000 registros pegando dados relacionados
+
+Modulo 5: Consultas
+Configurando Filtro Global: adicionar condições dentro do OnModelCreating que ele irá sempre levar em consideração
+Ignorando Filtro Global: basta utilizar o método IgnoreQueryFilters na query
+Consultas Projetadas: Trazer apenas os dados necessários da consulta convertendo para um novo objeto, utilizando o Select velho de guerra
+Consultas Parametrizadas: Consigo realizar queries em uma entidade utilizando .SQLRaw passando parametros de forma segura e consigo utilizar o where do linq (que cria uma subquery)
+Criando Consultas interpoladas: Consigo realizar consultas utilizando query pasando string (interpolada) SQL em uma entidade utilizando .SQLInterpolated passando parametros de forma direto na string, pois o entity converte as informações concatenadas na string em db parameters, o que tira o risco de injection, ao contratio de passar uma string assim para o ExecuteSqlRaw que a query fica vulnerável.
+Adicionando Recurso TAG nas consultas (para auditar os comandos): Adiciona um comentário na query (nunca tinha visto, interessante)
+Diferença entre consultas 1xN e Nx1: demonstrando como o ef core age quando o relacionando é 1xN que internamente faz o left join onde não necessriamente precisa ter registros relacionados e quando é Nx1 que internamente realiza o inner join ja que é relação direta
+Divisão de consultas com SplitQuery: Realiza a divisao da consulta em 2, obs: só funciona em relacionamentos, exemplo: funcionario e departamento, no modo normal ele busca o funcionario e os departamentos realizando left join (trazendo varias vezes o mesmo registro de funcionario) no split query ele realiza uma consulta para funcionario e outra para buscar os departamentos e 
+	é possível tornar essa configuração global (adicionando  _.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery) no contexto, dentro do UseSqlServer) ou apenas utilizar AsSplitQuery() na query, ou utilizar AsSingleQuery quando o Splitquery for padrão para realizar apenas uma query
+
+Modulo 6: Stored Procedures
+Criar Proc de inserção: basta colocar a query na stirng e utilizar a execução do comando SQL como db.Database.ExecuteSqlRaw("string com a proc");
+Inserindo dados utilizando a proc: mesma coisa da inserção, mas passando os parametros, exemplo db.Database.ExecuteSqlRaw("execute CriarDepartamento @p0, @p1", "Procedures", 1);
+Criar uma proc de Consulta: mesma coisa da inserção, mas fazendo um select na query
+Executando consulta via procedure: utilizar o SQLRaw na entidade que ja ira retornar os dados convertidos para mesma, exemplo: db.Departamentos.FromSqlRaw("execute GetDepartamentos @p0", "proc").ToList();
+
+Modulo 7: Infraestrutura
+Configurando um log simplificado: adicionando log do banco na aplicação, no contexto, utilizando o LogTo, no caso estou passando para o console e também é possível definir o level minimo do log, exemplo: optionsBuilder.UseSqlServer(strConnection).LogTo(Console.WriteLine, Microsoft.Extensions.Logging.LogLevel.Information);
+Filtrando eventos de seus logs: possibilidade de filtrar o tipo de evento que eu quero visualizar utilizando o LogTo, por exemplo log apenas de comandos executados e e conexão com erro, exemplo: optionsBuilder.UseSqlServer(strConnection).LogTo(Console.WriteLine, new[] { RelationalEventId.CommandExecuted });
+Escrevendo seus logs em um arquivo: utilizar o log to, mas passando o um Stream Writer (lembrar de sobreescer o dispose para salvar o stream dando um flush)
+Habilitando erros detalhados: habilitando EnableDetailedErrors no contexto que mostra uma exceção detalhadada (recomendada utilizar apenas em debug), muito boa pois mostra o erro completo
+Habilitando visualização de dados sensíveis: utilizando a função EnableSensitiveDataLogging fara com que o ef core mostre os dados sensíveis como os dados da query, aquelas interrogações que ficam na query agora ele mostra o valor, muuuuito util para debugar
+Configurando batch size: o lote default do ef core é de 42 registros, utilizar a função MaxBatchSize passando o numero detro do UseSqlServer, a vantagem é subir o numero maior de dados para o banco, a desvantagem é que pode pesar a rede, exemplo: .UseSqlServer(strConnection, _ => _.MaxBatchSize(50))
+Configurando o timeout do comando global: utilizando função CommandTimeout no UseSqlServer, exemplo: .UseSqlServer(strConnection, _ => _.CommandTimeout(160))
+Configurando timeout do comando para um fluxo específico: passando na instancia do Database a opção SetCommandTimeout, exemplo: db.Database.SetCommandTimeout(10);
+Habilitando resiliência de conexão: habilitar no contexto a opção EnableRetryOnFailure que ele irá tentar reconectar por 6x a cada 30 segundos, é possível customizar a quantidade de vezes e o intervalo
+
+Modulo 8: Modelo de dados
+Collations:Possibilidade configurar a Collation a ser utilizada pelo ef core, de forma global ou isolada (dentro do OnModelCreating)
+Sequencias: Configuração de sequencia criada pelo ef core, feito dentro do contexto (no método OnModelCreating)
+Indices: conseguir criar indices pelo proprio ef, sendo em cima de um campo apenas ou composto, é criado no contexto, dentro do método OnModelCreating, é possível setar nome por la, inclusive passar o filtro que o indice sera utilizado (não são todos os bancos que tem isso)
+Propagação de Dados: poder criar/alterar/excluir registro pelo entity framework na hora da criação do banco ou em outros momentos como em uma migrations
+Esquemas: poder falar para o entity utilizar um esquema padrão no contexto e poder passar q a entidade x utiliza o esquema y, interessante.
+Conversores de Valor: passar propriedades com V.O ou um enum e o entity conseguir converter isso para campo na tabela como int ou varchar, ele faz automaticamente, mas também é possível fazermos isso de forma manual, por exemplo pegar um campo enum q por padrão seria int e alterar no mapeamento que ele vai ser uma string e tambem é possivel fazer isso na desconversão como voltar essa string par o enum. Existe varios ja criados pela equipe do EF na lib Microsoft.EntityFrameworkCore.Storage.ValueConversion
+Conversores Customizados: poder criar um conversor de dados para utilizar no entity framework
+Propriedades de Somba(Shadow Properties): Propriedades que não são definidas no .NET, mas estão definidas no banco de dados, exemplo eu ter um relacionamento onde apenas fiz o mapetamento da propriedades de navegação e não da chave o ef automaticamente busca qual é o campo por baixo dos panos e realiza esse relacionamento, mas sem expor a propriedade de chave.
+Configurando uma Shadow Property: é possível criar shadow property pelo contexto passando seu nome e tipo e ela não precisa estar no model
+Inserindo e Consultando dados usando uma Shadow Property: é possível realizar a inserção e consulta em uma shadow property, mas para acessar é necessário acessar o passando a instancia para o metodo entry do ef passar o nome da propriedade e atualizar o CurrentValue, na consulta é necessário utilizar a classe EF para fazer query em cima dele, exemplo: db.Departamentos.Where(_ => EF.Property<DateTime>(_, "UltimaAtualizacao") < DateTime.Now)
+Owned Types: exibindo como realizar o mapeamento de um objeto complexo par o banco de dados, exemplo de classe endereço, exibindo como ela pode fazer parte de uma tabela de clientes ou mesmo criar uma 1x1 de forma simples (analisando o script gerado, da pra perceber que ele utiliza shadow porperty para realizar o relacionamento)
+Configurando Relacionando 1x1: exibição de como realizar o mapamento 1x1 de forma que o ef mapea a chave de relacionamento automatica e a gente passando qual campo que é (casos que a chave não é padrão como EstadoId, mas seja EstadoReference) e bonus mostrando como separar as configurações em arquivo e como pegar todas no contexto
+Configurando relacionamento 1xN: exibição de como realizar o mapeamento 1xN com algumas variações de configuração
+Configurando relacionamento NxM: exibição de como realizar o mapeamento NxN muuuuito mais facil o ef ja faz a terceira tabela sozinha, inclusive tranquilo de customizar essa terceira tabela caso precisar
+Customização NxM: meu deus que framework robado, é mto facil para customizar o relacionamento NxN, alterar o nome das propriedades e criar uma nova
+Campo de apoio: como utilizar campo de apoio no entity, exemplo mapear uma propriedade que tem um método ou propriedade Getter publico e o campo é uma propriedade privada o ef core tem como mapear isso.
+Configuration modelo de dados com TPH: exibindo como configurar uma hierarquia das tabelas por herança como fica a tabela geral (tudo na mesma tabela, mas com tipo para cada dado) e como ela converte para os tipos customizados e como customizar essa tabela para por exemplo mudar o valor de cada tipo de classe
+Configurando modelo de dados com TPT: exibindo como configurar uma hierarquia das tabelas por tipo (uma tabela para cada tipo) e como configurar cada uma delas, definir suas obrigações e etc
+Sacola de propriedades: recurso novo, posso criar uma tabela com base num dicionario, interessante demais, uma opção para guardar configurações da aplicação, muito facil.
+
+Modulo 9: Atributos - DataAnnotations (mais limitado e as propriedades configuradas via fluentApi sobreescreve uma anotação)
+Atributo Table: explicação sobre as anotações no geral e exemplo mostrando como nomear a tabela, os campos, passar tipo do campo, atributo de required e maxlength
+Atributo Inverse Table: atributo utilizado para quandoa propriedade tem mais de um relacionamento e é necessário informar qual campos faz tal relacionamento, exemplo Aeropoto com voos de chegada e partida e Voo com aeroporto de chegada e partida
+Atributo NotMapped: ignorar tabela ou campo no ef core utilizando a anotação NotMapped
+Atributo Database Generated: para casos que o valor do campo será gerado pelo proprio banco ou de outros meios, faz com que o entity não gere valor para ele, também pode ser utilizada para que impeça o banco de dados gerar o valor, ou o ef gerar o identity
+Atributo Index: gerar indice atraves de anotação, utilizando a anotação Index
+Atributo Backing Field: anotação para falar ao ef qual é o campo de apoio, BackingField e passar o nome do campo que vai ser o nome do campo "de verdade"
+Atributo Comment: anotação para gerar comentário Comment em cima da classe ou da propriedade
+Atributo Keyless: util para classes que são de views ou proc que não tem uma chave primario, ai o atributo irá avisar que não tem chave
+
+Modulo 10: EF Functions
+Funções de Data: interessante demais, sempre tive dificuldade em trabalhar com datas existem varios métodos para trabalhar com data no banco no EF.Functions como EF.Functions.IsDate, EF.Functions.DateDiffDay, resolve muitos problemas, vi casos que o pessoal dava o ToList porque tinha problema com campo data
+Função Like: muito bom, ultimamente tive problema com isso no nhibernate, bom saber que o .net ja trata isso de forma fácil, apenas utilizando o método EF.Functions.Like, exemplo EF.Functions.Like(_.Descricao1, "%Bo%")
+Função DataLength: mostra o quando de bytes aquela string ocupa no banco de dados e expõe a diferença entre o quando pesa o varchar e o nvarchar, muito interessante e é diferente de usar o .Length da string que irá apenas trazer a quantidade de caracteres da string, no DataLength ele traz a quantidade que aquela string usa no banco como no nvarchar que cada caractere utiliza 2 espaço por causa do unicode
+Função Property: muito util para conseguir trabalhar com as shadows properties EF.Property, exemplo .FirstOrDefault(p => EF.Property<string>(p, "PropriedadeSombra") == "Teste"); obs que só vai da certo com os dados rastrados (sem utilizar o AsNoTracking)
+Função Collate: conseguir passar o collate naquela consulta, muito bom !! EF.Functions.Collate
+
+Modulo 11: Interceptadores
+O que é: um recurso capaz de interceptar o comando que será executado na base de dados, podendo realizar otimização nesse comando
+Criando e registro um interceptador: mostrando como é a criação qual classe herdar e registrando o mesmo no contexto
+Sobreescrevendo métodos da classe base: começando a criar um novo interceptador e sobreescrevendo o metódo de execução e colocando um comportamento diferente
+Aplicação de hint NOLOCK nas consultas: exemplo incrível de colocando NOLOCK nas consultas atraves do nosso interceptador e mostrando como utilizar o interceptador em apenas algumas queries utilizando o tagwith
+Interceptando abertura de conexão com o banco: exemplo de interceptor na conexão no exempo alterando a connection string
+Interceptando alterações: criando um interceptador no save changes para logar as informações salvas
+
+Modulo 12: Transações
+O que é: explicação sobre a transação de banco a parte de commit e rollback de varias operações e etc, explicando que o entity consegue trabalhar com esse esquema utilizando a transação do BD
+Comportamento padrão do entity framework core: mostrando o fluxo do entity framework na sessão desde a abertura até o commit
+Gerando uma transação manualmente: gerando uma nova transação no ef e vendo como ele se comporta, utilizando o begintransaction e commit do ef
+Reverter Transação: utilizando o rollback de transação, no exemplo quando cai num catch
+Salvando Ponto de uma transação: criando "checkpoints" na transação, utilizando o CreateSavePoint, que caso der erro após ele irá salvar tudo até o CreateSavePoint, muito interessante, não conhecia, no rollback tem que falar até qual SavePoint irá realizar o rollback e depois realizar o commit novamente que é sucesso
+Usando TransactionScope: classe para executar várias bloco de códigos utilizando a mesma transação
+
+Modulo 13: UDFs (Funções definidas pelo usuário):
+O que é UDF: User Defined Function, é uma função definida pelo usuário no banco de dados, que pode retorno string, int ou table values, o entity framework possui recurso para conseguir utilizar as funções do banco de dados, nativas e as criadas pelos usuários
+Build-In Function: mostra como utilizar uma built function do banco de dados, é simples é apenas mapear o método e seus parametros, tem uma anotação q eu coloca as configurações, fácil, o método nem precisa ser implementado
+Registrando Funções: mostrando como mapear as funções utilizando uma outra classe sem ser a de contexto e como registrar essa classe, muito facil e prático
+Registrando Funções Utilizando FluentAPI: mostra como registrar as funções utilizand fluentAPI, achei mais trabalhoso do que utilizar anotação, é preciso informar mais coisas do metodo
+FuncaoDefinida pelo usuario: interessante, mostra a criação de um função e como mapear e utilizar ela no EF
+Customizando uma função complexa: exemplo interessante, pois traz um caso mais complexo que é do datediff que o datepart não é string, então mostra como mapear uma string para ele, interessante para funções mais complexas
+
+Modulo 14: Performance
+Tracking vs NoTracking: 
+	- Tracking: utilizada por padrão, consulta rastrada (como se ele fizesse um espelho do que veio e como o registro está agora) que os dados dela são rastrados então quando os seus dados são alterados é possível salva-los automaticamente (no SaveChanges) pois estão rastrados e EF ja entende se ela foi alterada, excluida atualizando seu estado
+	- NoTracking: os dados nessa consulta, ele vem sem rastreio então traz os dados, mas sem o rastreio pelo entity, não detecta modificações
+	(então qualquer alteração tem q ser registrada diretamente, via update e etc) e pode ter problemas de performance pois todo registro é criado, no tracking caso tenha um registro que ja está no retorno ele reaproveita invés de buscar todos os dados, como um cache, olhar exemplo de muito funcionarios com o mesmo departamento (não iria pegar toda vez o mesmo departamento (imagina esse departamento com um campo image de 1mb, bom ta ai a merda)
+Resolução de identidade: incrível, é explicada mais diferenças entre tracking e asnotracking e o professor apresenta uma feature que foi criada para resolver o problema de perfomance escrito acima do AsNoTracking que é o AsNoTrackingWithIdentityResolution, que não pega 100x a mesma instância, incrível e facil
+Desabilitando rastramento de consultas: colocando tracking global, utilizando UseQueryTrackingBehavior no classe de contexto e também é possível utilizar essa propriedade no contexto local, então passar um tracking para todas as consultas daquele método, interessante e facil
+Consulta Projetada e Rastrada: mostra que os dados do entity são rastrados até mesmo se a consulta retonar um objeto anonimo
+Consultas Projetadas: o professor foca na parte de perfomance mostrando o quanto uma consulta pesa na memoria mostrando o quanto é importante pegar apenas o que é necessário na consulta
+
+Modulo 15: Migrations
+Migrações: versionamento do modelo dados da aplicação, mantendo a sincronia entre aplicação e banco
+Dependências necessárias para criar uma migração: pacote Microsoft.EntityFrameworkCore.Design, Microsoft.EntityFrameworkCore.Design e também instalar o ef cli (de forma global dotnet tool install --global dotnet-ef)
+Gerando uma migração: exemplo de criação da primeira migração dotnet ef migrations add PrimeiraMigracao
+Analisando arquivos da migração:
+	- {NomeDaMigração}.cs - o arquivo principal que contém as alterações da migração onde fala oq deve fazer no Up e no Down, é possível customizar o arquivo
+	- {NomeDaMigração}.Designer - contém todas as configurações e metadados, é uma copia do modelo de dados no momento da geração da migração.
+	- ApplicationContextModelSnapshot - é gerado quando na primeira migração e é atualizado a cada nova, o arquivo é uma foto do estado atual do banco de dados, é o arquivo que o ef utiliza para identificar as alterações no banco de dados
+Gerando script SQL: gera o script do banco de dados inteiro muito util, pensando em casos que eu não tenho acesso ao banco mando para o responsável e ele executa, para gerar é utilizar o comando dotnet ef migrations script -o ../PrimeiroScriptSQL.sql
+Gerando script SQL idempotente: muito interessante, esse script pensando em casos que 2 pessoas estão rodando o script evita de quebrar para um, comando: dotnet ef migrations script -o ../PrimeiroScriptSQLIdempotente.sql -i
+Aplicando uma migração no banco de dados: 
+	1. gerando script e executar no banco de dados
+	2. atualizar via prompt de comando, utilizando o comando dotnet ef database update
+	3. via aplicação: new ApplicationContext().Database.Migrate(); (interessante, porém não gostei, mas legal saber)
+Desfazendo migrações: executar uma migração anterior a q vc precisa deletar, q o ef irá atualizar o banco até aquele ponto, exemplo dotnet ef database update PrimeiraMigracao, eu tinha criado uma segunda AdicionarTelefone q após rodar o comando o dado foi excluido da tabela e o campo excluido e a migração fica pendente, para remover de vez é executar o comando dotnet ef migrations remove que irá remover a ultima migração
+Migrações Pendentes: via promp dotnet ef migrations list e via código new ApplicationContext().Database.GetPendingMigrations()
+Engenharia Reversa: exemplo de engenharia reversa onde o ef lê o banco e cria, comando (com mais opções que o normal, apenas para ter o exemplo grande) dotnet ef dbcontext scaffold "Data Source=localhost; Initial Catalog=EFCoreAvancadoDb3; Integrated Security=true; MultipleActiveResultSets=true" Microsoft.EntityFrameworkCore.SQLServer --table Pessoas --use-database-names --data-annotations --context-dir .\Contexto --output-dir .\Entidades --namespace Meu.NameSpace --context-namespace Meu.NameSpace.Contexto, se for usar o --table tem que passar nome a nome que vai querer mapear
+
+Modulo 16: Outros Banco de Dados
+Provider POstgreSQL: pacote provider: Npgsql.EntityFrameworkCore.PostgreSQL, e no contexto utilizar UseNpgsql passando a string de conexão
+Provider SQLite: pacote provider: Microsoft.EntityFrameworkCore.Sqlite e utilizando UseSqlite passando a string de conexão
+Provider InMemory: banco para testes, interessante pesquisar mais sobre ele, pacote provider: Microsoft.EntityFrameworkCore.InMemory, passando a string de conexão
+Provider Azure Cosmos DB: pesquisar mais sobre é um banco NoSQL da microsoft, pacote provider: Microsoft.EntityFrameworkCore.Cosmos, passando a string de conexão
+
+Modulo 17: Aplicação Multi-tenant
+Arquitetura Multi-tenant: é um estilo de arquitetura que utiliza a mesma aplicação para varios clientes
+Single-tenant vs Multi-tenant: 
+	Single-tenant: o cliente tem um app e um banco de dados dedicado somente a ele, 
+		Vantagens: facil customização ja que é um aplicação para cada cliente da pra fazer alterações somente para um sem maiores problemas, segurança, como somente ele está na maquina o problema fica somente nele
+		Desvantagens: manutenção, ja que cada cliente pede algo costumização chega um momento que fica sem controle e de dificil manunteção, fazer deploy em todos e fazer com que funcione em todos, custo mais alto ja que cada um tem sua infra
+	Multi-tenant: tem por objeto fazer com que a aplicação consiga atender varios clientes com a mesma instância da aplicação, mais fácil para escalar (utilizando loadbalancers), ja que todos vão ter o sistema mais atualizado
+		Vantagens: manutenção ja que só tem uma aplicação diminui os pontos de alteração ja que é centralizada, custo reduzido por estar centralizado
+		Desvantagens: segurança se der ruim na aplicação irá afetar todos, customização ja que a aplicação atende a todos é mais dificil fazer com que a customização seja aplicada somente a 1.		
+Estratégias multi-tenant: 
+	1. Banco de dados: a mais indicada, cada cliente tem o seu banco de dados e a aplicação a acessa dinamicamente, ajuda a cumprir a LGPD ja que as informações de cada cliente está segregada.
+	2. Schema: utiliza o mesmo banco de dados, mas cada cliente tem seu schema
+	3. Indenticador na tabela: todos acessam o mesmo banco e schema, mas nas tabelas tem um identificador para o cliente, um campo adicional com essa informação o mais utilizado
+Criando o projeto: criação de api
+instalando dependencias: Microsoft.EntityFrameworkCore.SqlServer, Microsoft.EntityFrameworkCore.Design e Microsoft.EntityFrameworkCore.Tools
+preparando ambiente: configurando contexto e adicionando controller com get basico para 2 tabelas produtos e pessoas
+estratégia 1 - identificar tabela: muito interessante usando um campo de identifador na tabela, cria um middleware para adiciona-lo na injeção pegando da url e cria os filtros padrões no contexto e recupera esse valor, interessante demais !!
+estratégia 2 - schema: um pouco mais complicado, porque além de gerar a migration é necessário realizar todas as alterações em cada schema, mas interessante para fazer a query que foi criado um interceptor que ja aponta para o schema que é tenant-id que vem da url, interessante e outra estratégia de utilizar o IModelCacheKeyFactory que da pra utilizar o HasDefaultSchema no contexto mais facil e seguro
+estratégia 3 - banco de dados: achei a mais interessante, pois separa os dados em bancos diferente fica mais seguro, da pra fazer um esquema de substituir o nome na connection string e conectar dinamicamente, só é mais trabalhoso para as migrations que tem q executar banco a banco, mas achei a melhor pensando na LGPD
+
+Modulo 18: Padrão Repository e UOW
+O que é repository pattern: faz amediação entre o dominio e as camadas de mapeamento de dados, usando uma interface semenlhante a uma coleção para acessar objeto de domínio
+	Pros: Um unico ponto de acesso a dados, encapsulamente da logica de acesso a dados, SPOF (Ponto unico de falha)
+	Contras: Maior complexidade por ter que escrever mais código, analisar se precisa
+O que é Unit-Of-Work: uma unica transação que pode envolver multiplas operações tais como (inserção/atualização/exclusão)
+DbContext já é um padrão Repository e UOW: o DbContext, ja implementa os 2 padrões com as operações em cima de cada DbSet e o SaveChanges que confirma todas as transações
+Preparando o ambiente: criação da Api e da base de dados a ser utilizada
+Implamentando Repository Pattern: criando exemplo simples de um repositório
+Implamentando Persistência na API: exemplo de httppost e inserção
+Implementando UOW - Estratégia 1: criando a classe de unit of work que fica com a responsabilidade de fazer o commit tirando isso do repositório
+Implementando UOW - Estratégia 2: colocando instance de cada repositoio na classe UnitOfWork e acessando direto por la, não gostei muito trabalhosa toda vez ter q colocar ele na interface e na classe é mais facil utilizar a primeira mesmo
+Criando um Repositório Genérico: bom porque facilita a reusabilidade de código, mas pode ferir o ISP do Solid, porque herdando o repositório padrão, a gente vai ter métodos que a classe não precisa, criação deu m repositório generico
+Consulta com um Repositório Genérico:
+
+Modulo 19: Dicas e Truques
+ToQueryString: função que obtem o SQL que será executado no banco de dados
+QueryView: no debug olhando o contexto tem o objeto DebugView que vai mostrar o que o entity ira fazer no banco, dentro do change tracker
+Redefinir o estado do contexto: redefine o estado do contexto sem ter que criar um nova instância, exemplo db.ChangeTracker.Clear();
+Include com consulta filtrada: é pra glorificar de pé, muito bom poder fazer o include e filtrar pelo que precisa apenas
+SingleOrDefault e FirstOrDefault: 
+	- o Single retorna o unico elemento ou um valor padrão, se tiver valor duplicado com base no que foi filtrado ele irá dar exceção, caso não tiver irá retornar o valor default do tipo, usar quando precisar de 0 ou 1 elemento da consulta, no caso de cpf seria util, pq se tiver duplicado vai da erro no first não daria
+	- o First é mais direto irá retornar o primeiro elemento ou nada se não for encontrado, usar quando precisa apenas de 1 elemento da consulta, é mais rapido pois quando encontrar o primeiro ira retornar aquele objeto
+Tabela sem chave primária: o entity só consegue fazer consultas desses dados sem chave, mas filtra tranquilo 
+Usando views do meu banco de dados: interessante, pois cria a classe a coloca no contexto e no seu mapeamento (fluent api) usa o metodo ToView passando o nome da mesma e mapeia as propridades e funciona, muito prático
+Forçando o uso do varchar: por padrão o tipo de coluna quando é string é o nvarchar que ocupa o dobro de bytes na tabela, então adicionando inteligência no contexto para colocar varchar por default, interessante pensando tbm em colocar default nos decimais
+Aplicando convensão de nomeclentatura: interessante poder criar uma classe de extensão que cria a nomeclenatura e converter os nomes para o case que puder, um pouco trabalhoso, mas só é feita uma vez
+Operadores de Agregação: groupby padrão, usando as funções velhas de guerra hehe
+Operadores de agregação no agrupamento: padrão, mostrando como usar os dados do groupby no select ou no where
+Contadores de Eventos: mostrando o resultados dos contadores de eventos filtrados pelo ef, para extrair métricas, interessante pesquisa mais sobre
+
+Modulo 20: Testes
+Preparando Ambiente: criar projeto do xunit e instalar Microsoft.EntityFrameworkCore.InMemory, Microsoft.EntityFrameworkCore.Sqlite e Microsoft.EntityFrameworkCore.SqlServer
+Criando entidade de contexto: configurando contexto simples e criando entidade
+Criando testes usando o provider InMemory: interessante, por poder testar os repositórios o banco em memoria facilita, porém tem um a limitação que tem algumas funções do banco que ele não roda por padrão que são só do SQL (a parte do EF.Functions de data por exemplo)
+Criando testes usando o provider SQLite: interessante poder testar os dados com o SQLite deve dar um ambiente mais real, muito legal e simples
+
+Modulo 21: Sobrescrendo comportamentos do EF Core:
+Preparando ambiente: aquele console maroto que fizemos o curso todo
+Criando entidade e contexto: mesma coisa acima só que pro contexto
+Gerador SQL customizado: interessante, mas tem que ser feito com cuidado sobreescer um comportamento do entity, modo mais facil de colocar o WITH (NO LOCK) do que criar uma extensão é sobreescrever o visittable e dar um append no hint
+Criando factory do GeradorSQL: adicionando factory no contexto para que o entity consiga utilizar nossa classe com o comando customizado
+Usando o gerador SQL customizado: teste para ver o funcionamento do gerador criado
+
+
+Modulo 22: Diagnostics
+O que é Diagnostic Source: é um observer e seu principal papel é notificar seus assinantes, é um como um pipline de notificações e ele é utilizado em tudo no ecossistema .NET
+Criando um interceptador: criando um interceptador para pegar o comando e colocar o WITH NO LOCK, mas olhando para esse observer
+criando um listener: criando uma classe listener e dando subscribe no interceptador criado
+assinando o listener e validando:
+
+
+ACABOU, UFAAA, CURSO BRABO DEMAIS, RECOMENDO MUITO
